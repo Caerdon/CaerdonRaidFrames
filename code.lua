@@ -1,10 +1,10 @@
-local DEBUG_ENABLED = true
+local DEBUG_ENABLED = false
 local ADDON_NAME, NS = ...
 local eventFrame
 
 local function UpdateHealthColor(frame)
 	local r, g, b = frame.healthBar.r, frame.healthBar.g, frame.healthBar.b;
-	if ( UnitIsConnected(frame.unit) ) then
+	if ( frame.unit and UnitIsConnected(frame.unit) ) then
 		if frame["hasDispelDisease"] then
 			r, g, b = 0.8, 0.9, 0.4;
 		elseif frame["hasDispelMagic"] then
@@ -39,13 +39,18 @@ local ignoreEvents = {
 -- 	-- ["APPEARANCE_SEARCH_UPDATED"] = {},
 	["ACTIONBAR_SLOT_CHANGED"] = {},
 	["ACTIONBAR_UPDATE_COOLDOWN"] = {},
+	["BAG_NEW_ITEMS_UPDATED"] = {},
+	["BAG_UPDATE"] = {},
+	["BAG_UPDATE_DELAYED"] = {},
 -- 	-- ["BAG_UPDATE_COOLDOWN"] = {},
 	["BN_FRIEND_INFO_CHANGED"] = {},
 	["CHAT_MSG_BN_WHISPER"] = {},
 	["CHAT_MSG_BN_WHISPER_INFORM"] = {},
 	["CHAT_MSG_CHANNEL"] = {},
+	["CHAT_MSG_LOOT"] = {},
 	["CHAT_MSG_SYSTEM"] = {},
 	["CHAT_MSG_TRADESKILLS"] = {},
+	["CLOSE_INBOX_ITEM"] = {},
 	["COMBAT_LOG_EVENT_UNFILTERED"] = {},
 	["COMPANION_UPDATE"] = {},
 	["CRITERIA_UPDATE"] = {},
@@ -58,7 +63,10 @@ local ignoreEvents = {
 -- 	-- ["GUILD_ROSTER_UPDATE"] = {},
 -- 	-- ["ITEM_LOCK_CHANGED"] = {},
 -- 	-- ["ITEM_LOCKED"] = {},
+	["ITEM_PUSH"] = {},
 -- 	-- ["ITEM_UNLOCKED"] = {},
+	["MAIL_INBOX_UPDATE"] = {},
+	["MAIL_SUCCESS"] = {},
 -- 	-- ["MODIFIER_STATE_CHANGED"] = {},
 -- 	-- ["NAME_PLATE_UNIT_REMOVED"] = {},
 	["PLAYER_STARTED_MOVING"] = {},
@@ -74,6 +82,7 @@ local ignoreEvents = {
 	["UNIT_FACTION"] = {},
 	["UNIT_HEALTH"] = {},
 	["UNIT_HEALTH_FREQUENT"] = {},
+	["UNIT_INVENTORY_CHANGED"] = {},
 	["UNIT_PORTRAIT_UPDATE"] = {},
 	["UNIT_POWER"] = {},
 	["UNIT_POWER_FREQUENT"] = {},
