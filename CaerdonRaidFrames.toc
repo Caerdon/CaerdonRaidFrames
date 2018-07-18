@@ -1,8 +1,8 @@
-## Interface: 70300
+## Interface: 80000
 ## X-Compatible-With: 80000
 ## Title: Caerdon Raid Frames
 ## Notes: Augment Blizzard Raid Frames - currently just changes color of frames that can be dispelled.
 ## Author: Caerdon
-## Version: v0.1.0
+## Version: v0.2.0
 
 code.lua
