@@ -29,7 +29,6 @@ local function UpdateFrames()
 	for frameIndex = 1, GetNumGroupMembers() do
 		local frame = _G["CompactRaidFrame"..frameIndex]
 		if frame then
-			print("Updating "..frameIndex)
 			UpdateHealthColor(frame)
 		end
 	end
@@ -115,7 +114,7 @@ end
 function Caerdon_OnCompactUnitFrame_SetUpClicks(frame)
 	-- Experimenting with mousewheel, but this doesn't work at all.
 	frame:EnableMouseWheel(1)
-	frame:HookScript("OnMouseWheel",
+	frame:SetScript("OnMouseWheel",
 		function(self, delta)
 			if frame["hasDispelDisease"] then
 				print("Dispel disease here")
@@ -135,8 +134,72 @@ function Caerdon_OnCompactUnitFrame_SetUpClicks(frame)
 
 end
 
+local function UpdateOptionsFlowContainer(self)
+	if IsInGroup() then return end
+
+	local container = self.displayFrame.optionsFlowContainer;
+	
+	FlowContainer_RemoveAllObjects(container);
+	FlowContainer_PauseUpdates(container);
+	
+	self.displayFrame.profileSelector:Hide();
+	self.displayFrame.filterOptions:Hide();
+
+	FlowContainer_AddObject(container, self.displayFrame.raidMarkers);
+	self.displayFrame.raidMarkers:Show();
+	self.displayFrame.leaderOptions:Hide();
+
+	self.displayFrame.convertToRaid:Hide();
+
+	FlowContainer_AddLineBreak(container);
+	FlowContainer_AddSpacer(container, 20);
+	FlowContainer_AddObject(container, self.displayFrame.lockedModeToggle);
+	FlowContainer_AddObject(container, self.displayFrame.hiddenModeToggle);
+	self.displayFrame.lockedModeToggle:Show();
+	self.displayFrame.hiddenModeToggle:Show();
+	
+	FlowContainer_ResumeUpdates(container);
+	
+	local usedX, usedY = FlowContainer_GetUsedBounds(container);
+	self:SetHeight(usedY + 40);
+end
+
+local function UpdateContainerVisibility()
+	if IsInGroup() then return end
+
+	local manager = CompactRaidFrameManager;
+	if ( manager.container.enabled ) then
+		manager.container:Show();
+	else
+		manager.container:Hide();
+	end
+end
+
+local function UpdateShown(self)
+	if IsInGroup() then return end
+
+	self:Show();
+
+	UpdateOptionsFlowContainer(self);
+	UpdateContainerVisibility(self);
+end
+
+local function UpdateContainerLockVisibility(self)
+	if IsInGroup() then return end
+
+	if ( not CompactRaidFrameManagerDisplayFrameLockedModeToggle.lockMode ) then
+		CompactRaidFrameManager_LockContainer(self);
+	else
+		CompactRaidFrameManager_UnlockContainer(self);
+	end
+end
+
 hooksecurefunc("CompactUnitFrame_UpdateAuras", Caerdon_OnCompactUnitFrame_UpdateAuras)
 hooksecurefunc("CompactUnitFrame_SetUpClicks", Caerdon_OnCompactUnitFrame_SetUpClicks)
+hooksecurefunc("CompactRaidFrameManager_UpdateContainerVisibility", UpdateContainerVisibility)
+hooksecurefunc("CompactRaidFrameManager_UpdateContainerLockVisibility", UpdateContainerLockVisibility)
+hooksecurefunc("CompactRaidFrameManager_UpdateOptionsFlowContainer", UpdateOptionsFlowContainer)
+hooksecurefunc("CompactRaidFrameManager_UpdateShown", UpdateShown)
 
 eventFrame = CreateFrame("FRAME", "CaerdonRaidFrame")
 eventFrame:RegisterEvent "ADDON_LOADED"
@@ -160,19 +223,6 @@ function eventFrame:PLAYER_LOGIN(...)
 		eventFrame:RegisterEvent "PLAYER_ROLES_ASSIGNED"
 		-- eventFrame:RegisterEvent "UPDATE_INSTANCE_INFO"
 	end
-
-		CompactRaidFrameManager:Show()
-
-		-- SABTest = CreateFrame("Button", "SABTest", UIParent, "SecureHandlerMouseWheelTemplate,UIPanelButtonTemplate")
-		-- -- SABTest = CreateFrame("Button", "SABTest", UIParent, "SecureActionButtonTemplate,UIPanelButtonTemplate")
-		-- SABTest:SetWidth(120)
-		-- SABTest:SetHeight(40)
-		-- SABTest:SetText("SABTest")
-		-- SABTest:SetPoint("CENTER", 0, 0)
-		-- SABTest:SetAttribute("spell", "Purify")
-		-- SABTest:SetAttribute("type", "spell")
-		-- SABTest:RegisterForClicks("AnyUp")
-		-- SABTest:EnableMouseWheel(1)
 end
 
 -- function eventFrame:UPDATE_INSTANCE_INFO(self, event, ...)
