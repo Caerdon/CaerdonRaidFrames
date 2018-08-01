@@ -2,17 +2,134 @@ local DEBUG_ENABLED = false
 local ADDON_NAME, NS = ...
 local eventFrame
 
+local dispelColors = {
+	Magic =   { r = 1.0, g = 0.0, b = 1.0 },
+	Curse =   { r = 0.0, g = 0.0, b = 1.0 },
+	Poison =  { r = 0.2, g = 0.7, b = 0.3 },
+	Disease = { r = 0.8, g = 0.9, b = 0.4 }
+}
+
+local spellOverrides = {
+	Magic = {
+		{
+			id = 205604,
+			book = BOOKTYPE_SPELL
+		}
+	}
+}
+
+local dispellableDebuffTypes = { Magic = true, Curse = true, Poison = true, Disease = true }
+
+local function FrameKnowsDispel(debuffType, frame)
+	return debuffType and frame["hasDispel"..debuffType] ~= nil
+end
+
+local function AlternateDispelCheck(debuffType)
+	local canDispel = false
+
+	local spells = spellOverrides[debuffType]
+	if spells then 
+		for i = 1, #spells do
+			local spell = spells[i]
+			local isKnown = IsSpellKnown(spell.id, spell.book == BOOKTYPE_PET)
+			if isKnown then
+				local usable, noMana = IsUsableSpell(spell.id) -- Attempting to specify BOOKTYPE_PET here causes ID lookup not to work
+				canDispel = usable or noMana
+			end
+		end
+	end
+
+	return canDispel
+end
+
+local function CanDispel(debuffType, frame)
+	local canDispel = false
+	if FrameKnowsDispel(debuffType, frame) or AlternateDispelCheck(debuffType) then
+		canDispel = true
+	end
+
+	return canDispel
+end
+
+local inProcess = {}
+local function ShouldProcess(debuffType, frame)
+	local unitName = GetUnitName(frame.unit, true)
+	local shouldProcess = true
+	local activeToon = inProcess[unitName]
+	if not activeToon then
+		activeToon = {} 
+		inProcess[unitName] = activeToon
+		activeToon[debuffType] = true
+	elseif not activeToon[debuffType] then
+		activeToon[debuffType] = true
+	else
+		shouldProcess = false
+	end
+
+	return shouldProcess
+end
+
+local function GetColors(debuffType, frame)
+	local isCached = false
+	local colors = dispelColors[debuffType]
+	local r, g, b = colors.r, colors.g, colors.b		
+	if not ShouldProcess(debuffType, frame) then
+		isCached = true
+	else
+		local unitName = GetUnitName(frame.unit, true)
+		inProcess[unitName] = inProcess[unitName] or {}
+		inProcess[unitName][debuffType] = true
+	end
+
+	return r, g, b, isCached
+end
+
+local function ClearDebuff(debuffType, frame)
+	local unitName = GetUnitName(frame.unit, true)
+	if inProcess[unitName] and inProcess[unitName][debuffType] then
+		inProcess[unitName][debuffType] = false
+	end
+end
+
 local function UpdateHealthColor(frame)
-	local r, g, b = frame.healthBar.r, frame.healthBar.g, frame.healthBar.b;
+	local r, g, b = frame.healthBar.r, frame.healthBar.g, frame.healthBar.b
+	local foundDispellable = {}
 	if ( frame.unit and UnitIsConnected(frame.unit) ) then
-		if frame["hasDispelDisease"] then
-			r, g, b = 0.8, 0.9, 0.4;
-		elseif frame["hasDispelMagic"] then
-			r, g, b = 1.0, 0.0, 1.0;
-		elseif frame["hasDispelPoison"] then
-			r, g, b = 0.2, 0.7, 0.3;
-		elseif frame["hasDispelCurse"] then
-			r, g, b = 0.0, 0.0, 1.0;
+
+		for i = 1, 40 do
+			local name, texture, count, debuffType, duration, expirationTime, caster, canStealOrPurge, nameplateShowPersonal, spellId, _, _, _, nameplateShowAll = UnitAura(frame.unit, i, "HARMFUL")
+			if CanDispel(debuffType, frame) then
+				foundDispellable[debuffType] = true
+			end		
+		end
+
+		local shouldPlay = false
+		local isFound = false
+
+		for debuffType, display in pairs(dispellableDebuffTypes) do
+			-- TODO: can only color the first one found (which is hopefully priority...eventually)
+			-- Need to account for boss type debuffs
+			if UnitIsEnemy("player", frame.unit) then
+				ClearDebuff(debuffType, frame)
+				r, g, b = 1.0, 0.0, 0.0
+			else
+				if foundDispellable[debuffType] then
+					if not isFound then
+						isFound = true
+
+						r, g, b, isCached = GetColors(debuffType, frame)
+						if not isCached then		
+							shouldPlay = true
+						end
+					end
+				else
+					ClearDebuff(debuffType, frame)
+				end
+			end
+		end
+
+		if shouldPlay then
+			PlaySoundFile("Interface\\AddOns\\Decursive\\Sounds\\G_NecropolisWound-fast.ogg", "MASTER")
 		end
 	end
 
@@ -43,6 +160,8 @@ local ignoreEvents = {
 	["BAG_UPDATE_DELAYED"] = {},
 -- 	-- ["BAG_UPDATE_COOLDOWN"] = {},
 	["BN_FRIEND_INFO_CHANGED"] = {},
+	["CALENDAR_UPDATE_EVENT_LIST"] = {},
+	["CHAT_MSG_ADDON"] = {},
 	["CHAT_MSG_BN_WHISPER"] = {},
 	["CHAT_MSG_BN_WHISPER_INFORM"] = {},
 	["CHAT_MSG_CHANNEL"] = {},
@@ -59,14 +178,16 @@ local ignoreEvents = {
 	["GARRISON_BUILDING_PLACED"] = {},
 	["GARRISON_MISSION_LIST_UPDATE"] = {},
 -- 	-- ["GUILDBANKBAGSLOTS_CHANGED"] = {},
--- 	-- ["GUILD_ROSTER_UPDATE"] = {},
+	["GUILD_RANKS_UPDATE"] = {},
+	["GUILD_ROSTER_UPDATE"] = {},
+	["GUILD_TRADESKILL_UPDATE"] = {},
 -- 	-- ["ITEM_LOCK_CHANGED"] = {},
 -- 	-- ["ITEM_LOCKED"] = {},
 	["ITEM_PUSH"] = {},
 -- 	-- ["ITEM_UNLOCKED"] = {},
 	["MAIL_INBOX_UPDATE"] = {},
 	["MAIL_SUCCESS"] = {},
--- 	-- ["MODIFIER_STATE_CHANGED"] = {},
+	["MODIFIER_STATE_CHANGED"] = {},
 -- 	-- ["NAME_PLATE_UNIT_REMOVED"] = {},
 	["PLAYER_STARTED_MOVING"] = {},
 	["PLAYER_STOPPED_MOVING"] = {},
@@ -87,7 +208,7 @@ local ignoreEvents = {
 	["UNIT_POWER_FREQUENT"] = {},
 	["UNIT_SPELLCAST_SUCCEEDED"] = {},
 -- 	-- ["UPDATE_INVENTORY_DURABILITY"] = {},
--- 	-- ["UPDATE_MOUSEOVER_UNIT"] = {},
+	["UPDATE_MOUSEOVER_UNIT"] = {},
 -- 	-- ["UPDATE_PENDING_MAIL"] = {},
 	["UPDATE_WORLD_STATES"] = {},
 	["WORLD_MAP_UPDATE"] = {}
@@ -221,9 +342,28 @@ function eventFrame:PLAYER_LOGIN(...)
 		eventFrame:RegisterAllEvents()
 	else
 		eventFrame:RegisterEvent "PLAYER_ROLES_ASSIGNED"
+		-- eventFrame:RegisterEvent "COMBAT_LOG_EVENT_UNFILTERED"
 		-- eventFrame:RegisterEvent "UPDATE_INSTANCE_INFO"
 	end
 end
+
+
+-- function eventFrame:COMBAT_LOG_EVENT_UNFILTERED()
+-- 	local timestamp, type, hideCaster,                                                                                           -- arg1  to arg3
+--        sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags,                        -- arg4  to arg11
+--        spellId, spellName, spellSchool,                                                                                           -- arg12 to arg14
+--        auraType, amount = CombatLogGetCurrentEventInfo()       -- arg15 to arg23
+
+--     local inPartyFlags = bit.bor(COMBATLOG_OBJECT_AFFILIATION_RAID, COMBATLOG_OBJECT_AFFILIATION_PARTY, COMBATLOG_OBJECT_AFFILIATION_MINE)
+--     if bit.band(destFlags, inPartyFlags) ~= 0 then
+-- 	    if type == "SPELL_AURA_APPLIED" then
+-- 		    	-- UpdateFrames()
+-- 		    	print('Processing: ' .. tostring(destName))
+-- 		end
+-- 	else
+--     	print('OUTSIDER: ' .. tostring(destName))
+-- 	end
+-- end
 
 -- function eventFrame:UPDATE_INSTANCE_INFO(self, event, ...)
 	-- local arg1, arg2, arg3, arg4 = ...;
@@ -233,5 +373,5 @@ end
 function eventFrame:PLAYER_ROLES_ASSIGNED(self, event, ...)
 	local arg1, arg2, arg3, arg4 = ...;
 	local ubase = IsInRaid() and "raid" or "party"
-	UpdateFrames()
+	-- UpdateFrames()
 end
