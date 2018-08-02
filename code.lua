@@ -228,32 +228,32 @@ local function OnEvent(self, event, ...)
 	end
 end
 
-function Caerdon_OnCompactUnitFrame_UpdateAuras(frame)
-		UpdateHealthColor(frame)
-end
+-- function Caerdon_OnCompactUnitFrame_UpdateAuras(frame)
+-- 		UpdateHealthColor(frame)
+-- end
 
-function Caerdon_OnCompactUnitFrame_SetUpClicks(frame)
-	-- Experimenting with mousewheel, but this doesn't work at all.
-	frame:EnableMouseWheel(1)
-	frame:SetScript("OnMouseWheel",
-		function(self, delta)
-			if frame["hasDispelDisease"] then
-				print("Dispel disease here")
-			elseif frame["hasDispelMagic"] then
-				CastSpellByID(527, frame.unit)
-				print("Dispel magic here")
-			elseif frame["hasDispelPoison"] then
-				print("Dispel poison here")
-			elseif frame["hasDispelCurse"] then
-				print("Dispel curse here")
-			end
+-- function Caerdon_OnCompactUnitFrame_SetUpClicks(frame)
+-- 	-- Experimenting with mousewheel, but this doesn't work at all.
+-- 	frame:EnableMouseWheel(1)
+-- 	frame:SetScript("OnMouseWheel",
+-- 		function(self, delta)
+-- 			if frame["hasDispelDisease"] then
+-- 				print("Dispel disease here")
+-- 			elseif frame["hasDispelMagic"] then
+-- 				CastSpellByID(527, frame.unit)
+-- 				print("Dispel magic here")
+-- 			elseif frame["hasDispelPoison"] then
+-- 				print("Dispel poison here")
+-- 			elseif frame["hasDispelCurse"] then
+-- 				print("Dispel curse here")
+-- 			end
 
-			print(self:GetName() .. " clicked with " .. delta)
-		 end
-	)
+-- 			print(self:GetName() .. " clicked with " .. delta)
+-- 		 end
+-- 	)
 
 
-end
+-- end
 
 local function UpdateOptionsFlowContainer(self)
 	if IsInGroup() then return end
@@ -263,7 +263,9 @@ local function UpdateOptionsFlowContainer(self)
 	FlowContainer_RemoveAllObjects(container);
 	FlowContainer_PauseUpdates(container);
 	
-	self.displayFrame.profileSelector:Hide();
+	FlowContainer_AddObject(container, self.displayFrame.profileSelector);
+	self.displayFrame.profileSelector:Show();
+	-- self.displayFrame.profileSelector:Hide();
 	self.displayFrame.filterOptions:Hide();
 
 	FlowContainer_AddObject(container, self.displayFrame.raidMarkers);
@@ -315,12 +317,106 @@ local function UpdateContainerLockVisibility(self)
 	end
 end
 
-hooksecurefunc("CompactUnitFrame_UpdateAuras", Caerdon_OnCompactUnitFrame_UpdateAuras)
-hooksecurefunc("CompactUnitFrame_SetUpClicks", Caerdon_OnCompactUnitFrame_SetUpClicks)
+local lastActivationType, lastNumPlayers, lastSpec, lastEnemyType
+local function SetLastActivationType(activationType, numPlayers, spec, enemyType)
+	lastActivationType = activationType;
+	lastNumPlayers = numPlayers;
+	lastSpec = spec;
+	lastEnemyType = enemyType;
+end
+
+local function GetLastActivationType()
+	return lastActivationType, lastNumPlayers, 
+		lastSpec, lastEnemyType;
+end
+
+local function CheckAutoActivation()
+	local soloProfile = "Solo"
+	--We only want to adjust the profile when you 1) Zone or 2) change specs. We don't want to automatically
+	--change the profile when you are in the uninstanced world.
+	-- if ( not IsInGroup() ) then
+	-- 	CompactUnitFrameProfiles_SetLastActivationType(nil, nil, nil, nil);
+	-- 	return;
+	-- end
+	
+	local success, numPlayers, activationType, enemyType = CompactUnitFrameProfiles_GetAutoActivationState();
+	
+	if ( not success ) then
+		--We didn't have all the relevant info yet. Update again the next time called.
+		return;
+	end
+
+	local spec = GetSpecialization(false, false, 1);
+	local lastActivationType, lastNumPlayers, lastSpec, lastEnemyType = GetLastActivationType();
+	
+	if ( IsInRaid() and activationType == "world" ) then	--We don't adjust due to just the number of players in the raid.
+		return;
+	end
+
+	if ( activationType == "world" and enemyType == "PvE" ) then
+		local groupSize = GetNumGroupMembers(LE_PARTY_CATEGORY_HOME);
+		-- TODO: Allow for a hard-coded profile name for solo
+		if ( groupSize == 2 ) then
+			numPlayers = 2
+		elseif ( groupSize == 3 ) then
+			numPlayers = 3
+		elseif ( groupSize > 3) then
+			numPlayers = 5
+		else
+			numPlayers = 2
+			for i=1, GetNumRaidProfiles() do
+				local profile = GetRaidProfileName(i)
+				if profile == soloProfile then
+					numPlayers = 1
+					break
+				end
+			end
+		end
+	end
+
+	if ( lastActivationType == activationType and lastNumPlayers == numPlayers and lastSpec == spec and lastEnemyType == enemyType ) then
+		--If we last auto-adjusted for this same thing, we don't change. (In case they manually changed the profile.)
+		return;
+	end
+
+	local activeProfile = GetActiveRaidProfile()
+	
+	if numPlayers == 1 then
+		if activeProfile == soloProfile and GetRaidProfileOption(activeProfile, "autoActivateSpec"..spec) and GetRaidProfileOption(activeProfile, "autoActivate"..enemyType) then
+			SetLastActivationType(activationType, numPlayers, spec, enemyType);
+		else
+			for i=1, GetNumRaidProfiles() do
+				local profile = GetRaidProfileName(i);
+				if profile == soloProfile then
+					CompactUnitFrameProfiles_ActivateRaidProfile(profile);
+					SetLastActivationType(activationType, numPlayers, spec, enemyType);
+					break
+				end
+			end
+		end
+	else
+		if ( CompactUnitFrameProfiles_ProfileMatchesAutoActivation(activeProfile, numPlayers, spec, enemyType) ) then
+			SetLastActivationType(activationType, numPlayers, spec, enemyType);
+		else
+			for i=1, GetNumRaidProfiles() do
+				local profile = GetRaidProfileName(i);
+				if ( CompactUnitFrameProfiles_ProfileMatchesAutoActivation(profile, numPlayers, spec, enemyType) ) then
+					CompactUnitFrameProfiles_ActivateRaidProfile(profile);
+					SetLastActivationType(activationType, numPlayers, spec, enemyType);
+					break
+				end
+			end
+		end
+	end
+end
+
+hooksecurefunc("CompactUnitFrame_UpdateAuras", UpdateHealthColor)
+-- hooksecurefunc("CompactUnitFrame_SetUpClicks", Caerdon_OnCompactUnitFrame_SetUpClicks)
 hooksecurefunc("CompactRaidFrameManager_UpdateContainerVisibility", UpdateContainerVisibility)
 hooksecurefunc("CompactRaidFrameManager_UpdateContainerLockVisibility", UpdateContainerLockVisibility)
 hooksecurefunc("CompactRaidFrameManager_UpdateOptionsFlowContainer", UpdateOptionsFlowContainer)
 hooksecurefunc("CompactRaidFrameManager_UpdateShown", UpdateShown)
+hooksecurefunc("CompactUnitFrameProfiles_CheckAutoActivation", CheckAutoActivation)
 
 eventFrame = CreateFrame("FRAME", "CaerdonRaidFrame")
 eventFrame:RegisterEvent "ADDON_LOADED"
@@ -374,4 +470,5 @@ function eventFrame:PLAYER_ROLES_ASSIGNED(self, event, ...)
 	local arg1, arg2, arg3, arg4 = ...;
 	local ubase = IsInRaid() and "raid" or "party"
 	-- UpdateFrames()
+	CheckAutoActivation()
 end
